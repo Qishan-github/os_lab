@@ -106,43 +106,49 @@ default_init(void) {
 
 static void
 default_init_memmap(struct Page *base, size_t n) {
-    int i = 0;
-     for (; i < n; i++)
-     {
-         struct Page* p = base + i;
-         ClearPageReserved(p);
-         ClearPageProperty(p);
-         p->ref = p->property = 0;
-     }
-     SetPageProperty(base);
-     list_add_before(&free_list, &(base->page_link));
-     base->property = n;
-     nr_free += n;
+    assert(n > 0);
+    struct Page *p = base;
+    for (; p != base + n; p ++) {
+        assert(PageReserved(p));//确认本页是否为保留页
+        //设置标志位
+        p->flags = p->property = 0;
+        set_page_ref(p, 0);//清空引用
+        
+    }
+    base->property = n; //头一个空闲页 要设置数量
+    SetPageProperty(base);
+    nr_free += n;  //说明连续有n个空闲页，属于空闲链表
+    list_add_before(&free_list, &(p->page_link));
 }
 
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
-    if (n > nr_free) {
+    if (n > nr_free) { //如果所有的空闲页的加起来的大小都不够，那直接返回NULL
         return NULL;
     }
     struct Page *page = NULL;
-    list_entry_t *le = &free_list;
-    while ((le = list_next(le)) != &free_list) {
-        struct Page *p = le2page(le, page_link);
-        if (p->property >= n) {
+    list_entry_t *le = &free_list;//从空闲块链表的头指针开始
+    // 查找 n 个或以上 空闲页块 若找到 则判断是否大过 n 则将其拆分 并将拆分后的剩下的空闲页块加回到链表中
+    while ((le = list_next(le)) != &free_list) {//依次往下寻找直到回到头指针处,即已经遍历一次
+        // 此处 le2page 就是将 le 的地址 - page_link 在 Page 的偏移 从而找到 Page 的地址
+        struct Page *p = le2page(le, page_link);//将地址转换成页的结构
+        if (p->property >= n) {//由于是first-fit，则遇到的第一个大于N的块就选中即可
             page = p;
             break;
         }
     }
     if (page != NULL) {
-        list_del(&(page->page_link));
         if (page->property > n) {
             struct Page *p = page + n;
-            p->property = page->property - n;
-            list_add(&free_list, &(p->page_link));
-    }
-        nr_free -= n;
+            p->property = page->property - n;//如果选中的第一个连续的块大于n，只取其中的大小为n的块
+            SetPageProperty(p);
+            // 将多出来的插入到 被分配掉的页块 后面
+            list_add(&(page->page_link), &(p->page_link));
+        }
+        // 最后在空闲页链表中删除掉原来的空闲页
+        list_del(&(page->page_link));
+        nr_free -= n;//当前空闲页的数目减n
         ClearPageProperty(page);
     }
     return page;
