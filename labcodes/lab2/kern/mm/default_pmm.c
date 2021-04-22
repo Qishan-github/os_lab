@@ -121,6 +121,7 @@ default_init_memmap(struct Page *base, size_t n) {
     list_add_before(&free_list, &(p->page_link));
 }
 
+
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
@@ -144,10 +145,11 @@ default_alloc_pages(size_t n) {
             p->property = page->property - n;//如果选中的第一个连续的块大于n，只取其中的大小为n的块
             SetPageProperty(p);
             // 将多出来的插入到 被分配掉的页块 后面
-            list_add(&(page->page_link), &(p->page_link));
+            list_add(le, &(p->page_link));
         }
         // 最后在空闲页链表中删除掉原来的空闲页
         list_del(&(page->page_link));
+	
         nr_free -= n;//当前空闲页的数目减n
         ClearPageProperty(page);
     }
@@ -160,14 +162,15 @@ default_free_pages(struct Page *base, size_t n) {
     struct Page *p = base;
     for (; p != base + n; p ++) {
         assert(!PageReserved(p) && !PageProperty(p));
-        p->flags = 0;
+        p->flags = 0;//修改标志位
         set_page_ref(p, 0);
     }
-    base->property = n;
+    base->property = n;//设置连续大小为n
     SetPageProperty(base);
     list_entry_t *le = list_next(&free_list);
+    // 合并到合适的页块中
     while (le != &free_list) {
-        p = le2page(le, page_link);
+        p = le2page(le, page_link);//获取链表对应的Page
         le = list_next(le);
         if (base + base->property == p) {
             base->property += p->property;
@@ -182,7 +185,16 @@ default_free_pages(struct Page *base, size_t n) {
         }
     }
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    le = list_next(&free_list);
+    // 将合并好的合适的页块添加回空闲页块链表
+    while (le != &free_list) {
+        p = le2page(le, page_link);
+        if (base + base->property <= p) {
+            break;
+        }
+        le = list_next(le);
+    }
+    list_add_before(le, &(base->page_link));//将每一空闲块对应的链表插入空闲链表中
 }
 
 static size_t

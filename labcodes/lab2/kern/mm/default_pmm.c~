@@ -121,34 +121,47 @@ default_init_memmap(struct Page *base, size_t n) {
     list_add_before(&free_list, &(p->page_link));
 }
 
+// 根据块的地址大小，找到每个块插入链表的位置，此函数返回的是插入位置的后一个链表节点
+list_entry_t * getPosition(struct Page * pa) 
+{
+    list_entry_t * le = &free_list;
+    le = list_next(le);
+    
+    while((unsigned int)le <  (unsigned int)&(pa->page_link) && le != &free_list) le = list_next(le);
+    return le;
+}
+
+// 用于分配内存
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
-    if (n > nr_free) { //如果所有的空闲页的加起来的大小都不够，那直接返回NULL
+    // 查看是否有足够的内存用于分配
+    if (n > nr_free) {
         return NULL;
     }
     struct Page *page = NULL;
-    list_entry_t *le = &free_list;//从空闲块链表的头指针开始
-    // 查找 n 个或以上 空闲页块 若找到 则判断是否大过 n 则将其拆分 并将拆分后的剩下的空闲页块加回到链表中
-    while ((le = list_next(le)) != &free_list) {//依次往下寻找直到回到头指针处,即已经遍历一次
-        // 此处 le2page 就是将 le 的地址 - page_link 在 Page 的偏移 从而找到 Page 的地址
-        struct Page *p = le2page(le, page_link);//将地址转换成页的结构
-        if (p->property >= n) {//由于是first-fit，则遇到的第一个大于N的块就选中即可
+    list_entry_t *le = &free_list;
+
+    // 寻找足够大的内存区域
+    while ((le = list_next(le)) != &free_list) {
+        // 通过page_link来获得Page
+        struct Page *p = le2page(le, page_link);
+        if (p->property >= n) {
             page = p;
             break;
         }
     }
+
+    // 将此内存区域进行拆分分配，多余的部分重新插入链表中
     if (page != NULL) {
+        list_del(&(page->page_link));
         if (page->property > n) {
             struct Page *p = page + n;
-            p->property = page->property - n;//如果选中的第一个连续的块大于n，只取其中的大小为n的块
-            SetPageProperty(p);
-            // 将多出来的插入到 被分配掉的页块 后面
-            list_add(&(page->page_link), &(p->page_link));
-        }
-        // 最后在空闲页链表中删除掉原来的空闲页
-        list_del(&(page->page_link));
-        nr_free -= n;//当前空闲页的数目减n
+            p->property = page->property - n;
+            __list_add(&(p->page_link), getPosition(p) -> prev, getPosition(p));
+            //list_add(&free_list, &(p->page_link));
+    }
+        nr_free -= n;
         ClearPageProperty(page);
     }
     return page;
@@ -160,14 +173,15 @@ default_free_pages(struct Page *base, size_t n) {
     struct Page *p = base;
     for (; p != base + n; p ++) {
         assert(!PageReserved(p) && !PageProperty(p));
-        p->flags = 0;
+        p->flags = 0;//修改标志位
         set_page_ref(p, 0);
     }
-    base->property = n;
+    base->property = n;//设置连续大小为n
     SetPageProperty(base);
     list_entry_t *le = list_next(&free_list);
+    // 合并到合适的页块中
     while (le != &free_list) {
-        p = le2page(le, page_link);
+        p = le2page(le, page_link);//获取链表对应的Page
         le = list_next(le);
         if (base + base->property == p) {
             base->property += p->property;
@@ -182,7 +196,9 @@ default_free_pages(struct Page *base, size_t n) {
         }
     }
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
+    le = list_next(&free_list);
+    // 将合并好的合适的页块添加回空闲页块链表
+   __list_add(&(base -> page_link), getPosition(base) -> prev, getPosition(base));
 }
 
 static size_t
