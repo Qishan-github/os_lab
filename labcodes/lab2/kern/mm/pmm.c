@@ -396,15 +396,14 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
      * DEFINEs:
      *   PTE_P           0x001                   // page table/directory entry flags bit : Present
      */
-#if 0
-    if (0) {                      //(1) check if this page table entry is present
-        struct Page *page = NULL; //(2) find corresponding page to pte
-                                  //(3) decrease page reference
-                                  //(4) and free this page when page reference reachs 0
-                                  //(5) clear second page table entry
-                                  //(6) flush tlb
+if ((*ptep & PTE_P)) { //判断页表中该表项是否存在
+        struct Page *page = pte2page(*ptep);// 将页表项转换为页数据结构
+        if (page_ref_dec(page) == 0) { // 判断是否只被引用了一次，若引用计数减一后为0，则释放该物理页
+            free_page(page);
+        }
+        *ptep = 0; // //如果被多次引用，则不能释放此页，只用释放二级页表的表项，清空 PTE
+        tlb_invalidate(pgdir, la); // 刷新 tlb
     }
-#endif
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte

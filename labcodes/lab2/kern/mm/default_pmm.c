@@ -145,7 +145,7 @@ default_alloc_pages(size_t n) {
             p->property = page->property - n;//如果选中的第一个连续的块大于n，只取其中的大小为n的块
             SetPageProperty(p);
             // 将多出来的插入到 被分配掉的页块 后面
-            list_add(le, &(p->page_link));
+            list_add(&(page->page_link), &(p->page_link));
         }
         // 最后在空闲页链表中删除掉原来的空闲页
         list_del(&(page->page_link));

@@ -194,7 +194,7 @@ default_free_pages(struct Page *base, size_t n) {
         }
         le = list_next(le);
     }
-    list_add_before(le, &(base->page_link));//将每一空闲块对应的链表插入空闲链表中
+    list_add_before(le, &(base->page_link));//将空闲块插入空闲链表中
 }
 
 static size_t
