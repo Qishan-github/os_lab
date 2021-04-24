@@ -106,19 +106,19 @@ default_init(void) {
 
 static void
 default_init_memmap(struct Page *base, size_t n) {
-    assert(n > 0);
-    struct Page *p = base;
-    for (; p != base + n; p ++) {
-        assert(PageReserved(p));//确认本页是否为保留页
-        //设置标志位
-        p->flags = p->property = 0;
-        set_page_ref(p, 0);//清空引用
-        
-    }
-    base->property = n; //头一个空闲页 要设置数量
-    SetPageProperty(base);
-    nr_free += n;  //说明连续有n个空闲页，属于空闲链表
-    list_add_before(&free_list, &(p->page_link));
+     assert(n > 0);
+     int i = 0;
+     for (; i < n; i++)
+     {
+         struct Page* p = base + i;
+         assert(PageReserved(p));
+         ClearPageReserved(p);
+         p->ref = p->property = 0;//property只有块头使用，其余清零
+     }
+     SetPageProperty(base);//首页置零
+     list_add_before(&free_list, &(base->page_link));//将块头置于链表中管理
+     base->property = n;//块首页存放当前块内空闲页数量
+     nr_free += n;//当前内存链表中总空闲页数量
 }
 
 
@@ -149,7 +149,6 @@ default_alloc_pages(size_t n) {
         }
         // 最后在空闲页链表中删除掉原来的空闲页
         list_del(&(page->page_link));
-	
         nr_free -= n;//当前空闲页的数目减n
         ClearPageProperty(page);
     }
